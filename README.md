@@ -10,6 +10,12 @@ into a logical qubit encoded with the superdense color code, and each gate into 
 supported by the color code. A syndrome extraction round is explicitly represented using the `I` instruction
 in the circuit.
 
+## Installation
+
+```sh
+pip install tranzor
+```
+
 ## Examples
 
 ### S Gate
