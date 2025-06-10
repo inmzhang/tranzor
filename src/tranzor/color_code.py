@@ -3,13 +3,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Iterable, Literal, override
 
 import stim
-from tqec.circuit.measurement_map import MeasurementRecordsMap
-from tqec.circuit.moment import Moment
-from tqec.circuit.qubit import GridQubit
+
 from tranzor.base_code import BaseCode
+from tranzor.utils import MeasurementRecordsMap, Moment
 
 if TYPE_CHECKING:
-    from tranzor.compile import QubitCoordsMap
+    from tranzor.compile import LogicalCoordsMap
 
 
 class SuperDenseColorCode(BaseCode):
@@ -51,24 +50,13 @@ class SuperDenseColorCode(BaseCode):
         return frozenset(self._data_qubits)
 
     @property
-    @override
     def measure_qubits(self) -> frozenset[complex]:
         return frozenset(self._x_mqs | self._z_mqs)
 
     @property
     @override
-    def x_measure_qubits(self) -> frozenset[complex]:
-        return frozenset(self._x_mqs)
-
-    @property
-    @override
-    def z_measure_qubits(self) -> frozenset[complex]:
-        return frozenset(self._z_mqs)
-
-    @property
-    @override
     def used_qubits(self) -> frozenset[complex]:
-        return frozenset(self._data_qubits | self._x_mqs | self._z_mqs)
+        return frozenset(self.data_qubits | self.measure_qubits)
 
     @override
     def single_qubit_gate(
@@ -131,7 +119,7 @@ class SuperDenseColorCode(BaseCode):
     @override
     def reset(
         self,
-        basis: Literal["X", "Z"],
+        basis: str,
         qubit_map: dict[complex, int],
         observable_basis: dict[int, str] | None = None,
     ) -> list[Moment]:
@@ -142,7 +130,7 @@ class SuperDenseColorCode(BaseCode):
     @override
     def measure(
         self,
-        basis: Literal["X", "Z"],
+        basis: str,
         qubit_map: dict[complex, int],
         include_observable: Iterable[int] = (),
     ) -> list[Moment]:
@@ -229,14 +217,14 @@ class SuperDenseColorCode(BaseCode):
         self,
         current_logical_qubit: int,
         basis: Literal["X", "Z"],
-        coords_map: QubitCoordsMap,
+        coords_map: LogicalCoordsMap,
         measurement_record_before_current_moment: MeasurementRecordsMap,
         measurement_record_for_current_moment: MeasurementRecordsMap,
         is_data_qubit_readout: bool = False,
         correlated_detectors: stim.PauliString | None = None,
     ) -> stim.Circuit:
         local_map = coords_map.c2i(current_logical_qubit)
-        mqs = self.x_measure_qubits if basis == "X" else self.z_measure_qubits
+        mqs = self._x_mqs if basis == "X" else self._z_mqs
 
         num_measurements_in_current_moment = sum(
             len(offsets)
@@ -251,13 +239,12 @@ class SuperDenseColorCode(BaseCode):
                     for q in self.mq_to_dqs(mq)
                 ]
                 targets.extend(
-                    measurement_record_for_current_moment[cast_to_grid_qubit(dq)][-1]
-                    for dq in dqs
+                    measurement_record_for_current_moment[dq][-1] for dq in dqs
                 )
             else:
                 targets.append(
                     measurement_record_for_current_moment[
-                        cast_to_grid_qubit(coords_map.global_coords_map[local_map[mq]])
+                        coords_map.global_coords_map[local_map[mq]]
                     ][-1]
                 )
             if correlated_detectors is not None:
@@ -279,22 +266,10 @@ class SuperDenseColorCode(BaseCode):
                         global_index = coords_map.c2i(logical_qubit)[q]
                         global_coords = coords_map.global_coords_map[global_index]
                         targets.append(
-                            measurement_record_before_current_moment[
-                                cast_to_grid_qubit(global_coords)
-                            ][-1]
+                            measurement_record_before_current_moment[global_coords][-1]
                             - num_measurements_in_current_moment
                         )
             detector_circuit.append(
                 "DETECTOR", [stim.target_rec(t) for t in targets], [mq.real, mq.imag, 0]
             )
         return detector_circuit
-
-
-def cast_to_grid_qubit(q: complex) -> GridQubit:
-    """Cast a complex number to a GridQubit.
-
-    WARNING: This function assumes that the real and imaginary parts of the
-    complex number are integers. If this is not the case, it will cause
-    unexpected behavior.
-    """
-    return GridQubit(int(q.real), int(q.imag))

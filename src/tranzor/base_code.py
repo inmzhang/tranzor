@@ -4,11 +4,11 @@ from abc import ABCMeta, abstractmethod
 from typing import TYPE_CHECKING, Iterable, Literal
 
 import stim
-from tqec.circuit.measurement_map import MeasurementRecordsMap
-from tqec.circuit.moment import Moment
+
+from tranzor.utils import Moment, MeasurementRecordsMap
 
 if TYPE_CHECKING:
-    from tranzor.compile import QubitCoordsMap
+    from tranzor.utils import LogicalCoordsMap
 
 
 TRANSVERSAL_TAG = "transversal"
@@ -42,24 +42,6 @@ class BaseCode(metaclass=ABCMeta):
 
     @property
     @abstractmethod
-    def measure_qubits(self) -> frozenset[complex]:
-        """Returns the measure qubits of the code."""
-        pass
-
-    @property
-    @abstractmethod
-    def x_measure_qubits(self) -> frozenset[complex]:
-        """Returns the X-stabilizer measure qubits of the code."""
-        pass
-
-    @property
-    @abstractmethod
-    def z_measure_qubits(self) -> frozenset[complex]:
-        """Returns the Z-stabilizer measure qubits of the code."""
-        pass
-
-    @property
-    @abstractmethod
     def used_qubits(self) -> frozenset[complex]:
         """Returns all the used qubits of the code."""
         pass
@@ -88,7 +70,7 @@ class BaseCode(metaclass=ABCMeta):
     @abstractmethod
     def reset(
         self,
-        basis: Literal["X", "Z"],
+        basis: str,
         qubit_map: dict[complex, int],
         observable_basis: dict[int, str] | None = None,
     ) -> Iterable[Moment]:
@@ -99,7 +81,7 @@ class BaseCode(metaclass=ABCMeta):
     @abstractmethod
     def measure(
         self,
-        basis: Literal["X", "Z"],
+        basis: str,
         qubit_map: dict[complex, int],
         include_observable: Iterable[int] = (),
     ) -> Iterable[Moment]:
@@ -121,7 +103,7 @@ class BaseCode(metaclass=ABCMeta):
         self,
         current_logical_qubit: int,
         basis: Literal["X", "Z"],
-        coords_map: QubitCoordsMap,
+        coords_map: LogicalCoordsMap,
         measurement_record_before_current_moment: MeasurementRecordsMap,
         measurement_record_for_current_moment: MeasurementRecordsMap,
         is_data_qubit_readout: bool = False,

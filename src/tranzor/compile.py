@@ -1,22 +1,23 @@
-from dataclasses import dataclass
 import functools
 from itertools import zip_longest
 from typing import Iterable
 
 import stim
-from tqec.circuit.moment import Moment, iter_stim_circuit_without_repeat_by_moments
-from tqec.circuit.qubit_map import QubitMap
-from tqec.post_processing.utils.moment import merge_moments
-from tqec.circuit.measurement_map import MeasurementRecordsMap
-from tqecd.utils import (
+
+from tranzor.utils import (
+    Moment,
+    iter_stim_circuit_without_repeat_by_moments,
+    QubitMap,
+    MeasurementRecordsMap,
     has_measurement,
-    has_only_measurement_or_is_virtual,
-    has_only_reset_or_is_virtual,
     has_reset,
+    has_I,
     is_measurement,
     is_reset,
+    has_only_measurement_or_is_virtual,
+    has_only_reset_or_is_virtual,
+    LogicalCoordsMap,
 )
-
 from tranzor.base_code import BaseCode
 
 
@@ -34,38 +35,6 @@ COMMON_SUPPORTED_GATES = [
     "CNOT",
     "CX",
 ]
-
-
-@dataclass(frozen=True)
-class QubitCoordsMap:
-    local_index_map: dict[int, dict[complex, int]]
-    """A mapping from the index of the logical qubit to a map that maps the local
-    qubit coordinates in that logical qubit to a global qubit index."""
-    global_coords_map: dict[int, complex]
-    """A mapping from the global qubit index to the global coordinates of the qubit."""
-
-    def logical_indices(self) -> set[int]:
-        """Returns the set of logical qubit indices."""
-        return set(self.local_index_map.keys())
-
-    def physical_indices(self) -> set[int]:
-        """Returns the set of global qubit indices."""
-        return set(self.global_coords_map.keys())
-
-    def c2i(self, logical_qubit: int) -> dict[complex, int]:
-        return self.local_index_map[logical_qubit]
-
-    def build_coords_circuit(self) -> stim.Circuit:
-        """Builds a stim.Circuit that contains QUBIT_COORDS instructions for all
-        global qubit indices."""
-        coords_circuit = stim.Circuit()
-        for global_idx, global_coords in self.global_coords_map.items():
-            coords_circuit.append(
-                "QUBIT_COORDS",
-                [global_idx],
-                [global_coords.real, global_coords.imag],
-            )
-        return coords_circuit
 
 
 def compile_circuit(circuit: stim.Circuit, code: BaseCode) -> stim.Circuit:
@@ -96,6 +65,7 @@ def compile_circuit(circuit: stim.Circuit, code: BaseCode) -> stim.Circuit:
     measurement_record = MeasurementRecordsMap()
     for moment_idx, moment in enumerate(moments):
         moment_inner: list[list[Moment]] = []
+        # record detection region sources that back-propagate in the circuit
         detectors_source: list[stim.PauliString] = []
         for logical_inst in moment.circuit:
             assert isinstance(logical_inst, stim.CircuitInstruction)
@@ -308,11 +278,7 @@ def _resolve_observable_include(circuit: stim.Circuit) -> dict[int, list[int]]:
 
 def _resolve_logical_qubit_coords_map(
     circuit: stim.Circuit, code: BaseCode
-) -> QubitCoordsMap:
-    """Returns a tuple of dict (d1, d2). d1 is a mapping from the index of the
-    logical qubit to a map that maps the local qubit coordinates in that logical
-    qubit to a global qubit index. d2 is a mapping from the global qubit index
-    to the global coordinates of the qubit."""
+) -> LogicalCoordsMap:
     shift_unit = code.bounding_box
 
     local_index_map: dict[int, dict[complex, int]] = {}
@@ -339,7 +305,7 @@ def _resolve_logical_qubit_coords_map(
             )
             global_idx += 1
 
-    return QubitCoordsMap(local_index_map, global_coords_map)
+    return LogicalCoordsMap(local_index_map, global_coords_map)
 
 
 def _filter_qubit_coords_instructions(circuit: stim.Circuit) -> stim.Circuit:
@@ -383,11 +349,6 @@ def _resolve_detector_correlation(
     return correlated_detectors
 
 
-def has_I(circuit: stim.Circuit) -> bool:
-    """Returns True if the circuit contains I instructions."""
-    return any(inst.name == "I" for inst in circuit)
-
-
 def _split_circuit_and_add_observable_tag(
     logical_circuit: stim.Circuit,
 ) -> list[Moment]:
@@ -426,7 +387,7 @@ def _split_circuit_and_add_observable_tag(
 
 
 def _split_obs_tag(tag: str) -> dict[int, str]:
-    res = {}
+    res: dict[int, str] = {}
     if not tag:
         return res
     for part in tag.split(","):
